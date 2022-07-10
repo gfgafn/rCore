@@ -1,14 +1,18 @@
 #![no_std]
 #![no_main]
+//! - `#![feature(panic_info_message)]`  
+//!   panic! 时，获取其中的信息并打印
 #![feature(panic_info_message)]
 
 #[macro_use]
 mod console;
 
 mod lang_items;
+mod logging;
 mod sbi;
 
 use core::arch::global_asm;
+use log::{debug, error, info, trace, warn};
 
 global_asm!(include_str!("entry.asm"));
 
@@ -29,6 +33,8 @@ extern "C" {
 #[no_mangle]
 pub fn rust_main() -> ! {
     clear_bss();
+    logging::init();
+
     info!("load range: _start = {:#x}", _start as usize);
     info!(
         "boot_stack [{:#x}, {:#x}]",
