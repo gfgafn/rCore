@@ -1,0 +1,63 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "make build",
+			"type": "shell",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"command": "cd ./os && make build",
+			"linux": {
+				"command": "cd ./os && make build"
+			},
+			"presentation": {
+				"focus": true
+			}
+		},
+		{
+			"label": "make run LOG=trace",
+			"type": "shell",
+			"group": "none",
+			"command": "cd ./os && make run LOG=trace",
+			"linux": {
+				"command": "cd ./os && make run LOG=trace"
+			},
+			"presentation": {
+				"focus": true
+			},
+			"problemMatcher": [
+				"$rustc"
+			]
+		},
+		{
+			"label": "gdbserver(run qemu)",
+			"type": "shell",
+			"command": "cd ./os && make gdbserver",
+			"linux": {
+				"command": "cd ./os && make gdbserver"
+			},
+			"problemMatcher": [
+				"$rustc"
+			],
+			"presentation": {
+				"group": "gdb server and client"
+			},
+		},
+		{
+			"label": "gdbclient",
+			"type": "shell",
+			"command": "cd ./os && make gdbclient",
+			"linux": {
+				"command": "cd ./os && make gdbclient"
+			},
+			"problemMatcher": [
+				"$rustc"
+			],
+			"presentation": {
+				"group": "gdb server and client"
+			}
+		}
+	]
+}
