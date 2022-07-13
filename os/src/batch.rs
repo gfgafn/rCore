@@ -2,10 +2,11 @@
 
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
-use core::arch::asm;
 use lazy_static::*;
 
-const USER_STACK_SIZE: usize = 4096 * 2;
+// 将用户栈的大小调整为 4Kbit, 方便测试
+// 具体参见 https://github.com/DeathWish5/rCore_tutorial_tests/blob/master/guide.md#lab2
+const USER_STACK_SIZE: usize = 4096;
 const KERNEL_STACK_SIZE: usize = 4096 * 2;
 const MAX_APP_NUM: usize = 16;
 const APP_BASE_ADDRESS: usize = 0x80400000;
@@ -21,12 +22,12 @@ struct UserStack {
     data: [u8; USER_STACK_SIZE],
 }
 
-static USER_STACK: UserStack = UserStack {
-    data: [0; USER_STACK_SIZE],
-};
-
 static KERNEL_STACK: KernelStack = KernelStack {
     data: [0; KERNEL_STACK_SIZE],
+};
+
+static USER_STACK: UserStack = UserStack {
+    data: [0; USER_STACK_SIZE],
 };
 
 impl KernelStack {
@@ -78,7 +79,7 @@ impl AppManager {
         }
         println!("[kernel] Loading app_{}", app_id);
         // clear icache
-        asm!("fence.i");
+        core::arch::asm!("fence.i");
         // clear app area
         core::slice::from_raw_parts_mut(APP_BASE_ADDRESS as *mut u8, APP_SIZE_LIMIT).fill(0);
         let app_src = core::slice::from_raw_parts(
@@ -133,7 +134,7 @@ pub fn run_next_app() -> ! {
         app_manager.load_app(current_app);
     }
     app_manager.move_to_next_app();
-    drop(app_manager);
+    core::mem::drop(app_manager);
     // before this we have to drop local variables related to resources manually
     // and release the resources
     extern "C" {
@@ -145,4 +146,18 @@ pub fn run_next_app() -> ! {
         __restore(cx_addr as *const _ as usize);
     }
     panic!("Unreachable in batch::run_current_app!");
+}
+/// 对用户程序要输出的数据进行检查，使其仅能输出位于程序本身内存空间内的数据
+pub fn checkmem(addr: usize, len: usize) -> bool {
+    let user_stack_bottom = USER_STACK.get_sp();
+    let user_stack_top = USER_STACK.get_sp() - USER_STACK_SIZE;
+
+    if user_stack_top <= addr && user_stack_bottom >= addr + len {
+        return true;
+    }
+    if APP_BASE_ADDRESS <= addr && APP_BASE_ADDRESS + APP_SIZE_LIMIT >= addr + len {
+        return true;
+    }
+
+    false
 }

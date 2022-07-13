@@ -15,23 +15,8 @@ mod sync;
 mod syscall;
 mod trap;
 
-use core::arch::global_asm;
-use log::{debug, error, info, trace, warn};
-
-global_asm!(include_str!("entry.asm"));
-global_asm!(include_str!("link_app.S"));
-
-extern "C" {
-    fn stext();
-    fn etext();
-    fn srodata();
-    fn erodata();
-    fn sdata();
-    fn edata();
-    fn _start();
-    fn boot_stack();
-    fn boot_stack_top();
-}
+core::arch::global_asm!(include_str!("entry.asm"));
+core::arch::global_asm!(include_str!("link_app.S"));
 
 #[no_mangle]
 pub fn rust_main() -> ! {
@@ -40,21 +25,7 @@ pub fn rust_main() -> ! {
     println!("[kernel] Hello, world!");
     trap::init();
     batch::init();
-
-    info!("load range: _start = {:#x}", _start as usize);
-    info!(
-        "boot_stack [{:#x}, {:#x}]",
-        boot_stack as usize, boot_stack_top as usize
-    );
-    info!(".text [{:#x}, {:#x}]", stext as usize, etext as usize);
-    info!(".rodata [{:#x}, {:#x}]", srodata as usize, erodata as usize);
-    info!(".data [{:#x}, {:#x}]", sdata as usize, edata as usize);
-    error!("Hello, world!");
-    warn!("This is warnning message!");
-    trace!("This is trace message!");
-    debug!("This is debug message!");
     batch::run_next_app();
-    // panic!("Shutdown machine!");
 }
 
 fn clear_bss() {
