@@ -61,6 +61,14 @@
 			}
 		},
 		{
+			"label": "os gdb debug",
+			"type": "shell",
+			"command": "cd ./os && make debug",
+			"linux": {
+				"command": "cd ./os && make debug"
+			},
+		},
+		{
 			"label": "make build user-mode application",
 			"type": "shell",
 			"group": {

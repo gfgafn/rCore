@@ -7,14 +7,19 @@
 #[macro_use]
 mod console;
 
+mod batch;
 mod lang_items;
 mod logging;
 mod sbi;
+mod sync;
+mod syscall;
+mod trap;
 
 use core::arch::global_asm;
 use log::{debug, error, info, trace, warn};
 
 global_asm!(include_str!("entry.asm"));
+global_asm!(include_str!("link_app.S"));
 
 extern "C" {
     fn stext();
@@ -23,8 +28,6 @@ extern "C" {
     fn erodata();
     fn sdata();
     fn edata();
-    fn sbss();
-    fn ebss();
     fn _start();
     fn boot_stack();
     fn boot_stack_top();
@@ -34,6 +37,9 @@ extern "C" {
 pub fn rust_main() -> ! {
     clear_bss();
     logging::init();
+    println!("[kernel] Hello, world!");
+    trap::init();
+    batch::init();
 
     info!("load range: _start = {:#x}", _start as usize);
     info!(
@@ -47,9 +53,17 @@ pub fn rust_main() -> ! {
     warn!("This is warnning message!");
     trace!("This is trace message!");
     debug!("This is debug message!");
-    panic!("Shutdown machine!");
+    batch::run_next_app();
+    // panic!("Shutdown machine!");
 }
 
 fn clear_bss() {
-    (sbss as usize..ebss as usize).for_each(|a| unsafe { (a as *mut u8).write_volatile(0) })
+    extern "C" {
+        fn sbss();
+        fn ebss();
+    }
+    unsafe {
+        core::slice::from_raw_parts_mut(sbss as usize as *mut u8, ebss as usize - sbss as usize)
+            .fill(0);
+    }
 }
