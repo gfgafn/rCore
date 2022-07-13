@@ -3,16 +3,12 @@ TARGET := riscv64gc-unknown-none-elf
 MODE := release
 KERNEL_ELF := target/$(TARGET)/$(MODE)/os
 KERNEL_BIN := $(KERNEL_ELF).bin
+DISASM_TMP := target/$(TARGET)/$(MODE)/asm
 
 # BOARD
 BOARD ?= qemu
 SBI ?= rustsbi
 BOOTLOADER := ../bootloader/$(SBI)-$(BOARD).bin
-
-# Building mode argument
-ifeq ($(MODE), release)
-	MODE_ARG := --release
-endif
 
 # KERNEL ENTRY
 ifeq ($(BOARD), qemu)
@@ -23,14 +19,16 @@ endif
 OBJDUMP := rust-objdump --arch-name=riscv64
 OBJCOPY := rust-objcopy --binary-architecture=riscv64
 
-# Run usertests or usershell
-TEST ?=
+# Disassembly
+DISASM ?= -x
+
+TEST ?= 0
 
 build: env switch-check $(KERNEL_BIN)
 
 switch-check:
 ifeq ($(BOARD), qemu)
-	(which last-qemu) || (rm -f touch last-qemu && make clean)
+	(which last-qemu) || (rm last-k210 -f && touch last-qemu && make clean)
 endif
 
 env:
@@ -42,9 +40,8 @@ env:
 $(KERNEL_BIN): kernel
 	@$(OBJCOPY) $(KERNEL_ELF) --strip-all -O binary $@
 
-$(APPS):
-
 kernel:
+	@cd ../user && make build TEST=$(TEST)
 	@echo Platform: $(BOARD)
 	@cp src/linker-$(BOARD).ld src/linker.ld
 	@cargo build --release
@@ -53,7 +50,17 @@ kernel:
 clean:
 	@cargo clean
 
+disasm: kernel
+	@$(OBJDUMP) $(DISASM) $(KERNEL_ELF) | less
+
+disasm-vim: kernel
+	@$(OBJDUMP) $(DISASM) $(KERNEL_ELF) > $(DISASM_TMP)
+	@vim $(DISASM_TMP)
+	@rm $(DISASM_TMP)
+
 run: run-inner
+
+	
 
 run-inner: build
 ifeq ($(BOARD),qemu)
@@ -76,4 +83,4 @@ gdbserver: build
 gdbclient:
 	@riscv64-unknown-elf-gdb -ex 'file $(KERNEL_ELF)' -ex 'set arch riscv:rv64' -ex 'target remote localhost:1234'
 
-.PHONY: build env kernel clean run-inner switch-check gdbserver gdbclient
+.PHONY: build env kernel clean disasm disasm-vim run-inner switch-check gdbserver gdbclient
