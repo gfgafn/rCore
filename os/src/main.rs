@@ -4,15 +4,21 @@
 //!   panic! 时，获取其中的信息并打印
 #![feature(panic_info_message)]
 
+#[cfg(feature = "board_qemu")]
+#[path = "boards/qemu.rs"]
+mod board;
+
 #[macro_use]
 mod console;
 
-mod batch;
+mod config;
 mod lang_items;
+mod loader;
 mod logging;
 mod sbi;
 mod sync;
 mod syscall;
+mod task;
 mod trap;
 
 core::arch::global_asm!(include_str!("entry.asm"));
@@ -24,8 +30,9 @@ pub fn rust_main() -> ! {
     logging::init();
     println!("[kernel] Hello, world!");
     trap::init();
-    batch::init();
-    batch::run_next_app();
+    loader::load_apps();
+    task::run_first_task();
+    panic!("Unreachable in rust_main!");
 }
 
 fn clear_bss() {

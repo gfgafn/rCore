@@ -38,3 +38,7 @@ pub fn write(fd: usize, buf: &[u8]) -> isize {
 pub fn exit(exit_code: i32) -> isize {
     crate::syscall::sys_exit(exit_code)
 }
+
+pub fn yield_() -> isize {
+    crate::syscall::sys_yield()
+}
