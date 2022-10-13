@@ -2,8 +2,8 @@
     // https://doc.rust-lang.org/cargo/commands/cargo-check.html#target-selection
     "rust-analyzer.checkOnSave.allTargets": false,
     "rust-analyzer.checkOnSave.extraArgs": [
-        "--lib",
         "--bins",
         "--examples",
-    ]
+    ],
+    "python.formatting.provider": "black"
 }
