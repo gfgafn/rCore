@@ -1,16 +1,7 @@
-#![allow(unused)] // 此行请放在该文件最开头
-
 use core::arch::asm;
 
 const SBI_SET_TIMER: usize = 0;
 const SBI_CONSOLE_PUTCHAR: usize = 1;
-const SBI_CONSOLE_GETCHAR: usize = 2;
-const SBI_CLEAR_IPI: usize = 3;
-const SBI_SEND_IPI: usize = 4;
-const SBI_REMOTE_FENCE_I: usize = 5;
-const SBI_REMOTE_SFENCE_VMA: usize = 6;
-const SBI_REMOTE_SFENCE_VMA_ASID: usize = 7;
-const SBI_SHUTDOWN: usize = 8;
 
 ///  handle SBI call with `which` SBI_id and other arguments
 #[inline(always)]
@@ -40,6 +31,9 @@ use crate::board::QEMUExit;
 pub fn shutdown() -> ! {
     #[cfg(feature = "board_qemu")]
     crate::board::QEMU_EXIT_HANDLE.exit_failure();
+}
 
-    panic!("It should shutdown!");
+/// use sbi call to set timer
+pub fn set_timer(timer: usize) {
+    sbi_call(SBI_SET_TIMER, timer, 0, 0);
 }

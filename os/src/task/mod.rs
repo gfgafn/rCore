@@ -11,16 +11,17 @@
 
 mod context;
 mod switch;
-
 #[allow(clippy::module_inception)]
 mod task;
 
-use self::task::{TaskControlBlock, TaskStatus};
-use crate::config::{APP_SIZE_LIMIT, MAX_APP_NUM, USER_STACK_SIZE};
-use crate::loader::{get_base_i, get_current_user_stack_bottom, get_num_app, init_app_cx};
+pub use context::TaskContext;
+
 use lazy_static::*;
 
-pub use context::TaskContext;
+use crate::config::{APP_SIZE_LIMIT, MAX_APP_NUM, USER_STACK_SIZE};
+use crate::loader::{get_base_i, get_current_user_stack_bottom, get_num_app, init_app_cx};
+
+use self::task::{TaskControlBlock, TaskStatus};
 
 /// The task manager, where all the tasks are managed.
 ///
@@ -148,11 +149,11 @@ impl TaskManager {
         let current_user_stack_top = current_user_stack_bottom - USER_STACK_SIZE;
         let current_task_base_address = get_base_i(current_task);
 
-        if current_user_stack_top <= buf_addr && current_user_stack_bottom >= buf_addr + len {
+        if current_user_stack_top <= buf_addr && buf_addr + len <= current_user_stack_bottom {
             return true;
         }
         if current_task_base_address <= buf_addr
-            && current_task_base_address + APP_SIZE_LIMIT >= buf_addr + len
+            && buf_addr + len <= current_task_base_address + APP_SIZE_LIMIT
         {
             return true;
         }

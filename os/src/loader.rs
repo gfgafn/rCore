@@ -29,9 +29,11 @@ pub static USER_STACK: [UserStack; MAX_APP_NUM] = [UserStack {
 }; MAX_APP_NUM];
 
 impl KernelStack {
+    /// 获取内核堆栈底地址
     fn get_sp(&self) -> usize {
         self.data.as_ptr() as usize + KERNEL_STACK_SIZE
     }
+
     pub fn push_context(&self, trap_cx: TrapContext) -> usize {
         let trap_cx_ptr = (self.get_sp() - core::mem::size_of::<TrapContext>()) as *mut TrapContext;
         unsafe {
@@ -42,6 +44,7 @@ impl KernelStack {
 }
 
 impl UserStack {
+    /// 获取用户栈栈底地址
     pub fn get_sp(&self) -> usize {
         self.data.as_ptr() as usize + USER_STACK_SIZE
     }

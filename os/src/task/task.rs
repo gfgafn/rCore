@@ -8,7 +8,7 @@ pub struct TaskControlBlock {
     pub task_cx: TaskContext,
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub enum TaskStatus {
     UnInit,
     Ready,
