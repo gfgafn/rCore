@@ -22,8 +22,7 @@ use riscv::register::{
     sie, stval, stvec,
 };
 
-use crate::task;
-use crate::timer;
+use crate::{syscall, task, timer};
 
 core::arch::global_asm!(include_str!("trap.S"));
 
@@ -52,7 +51,7 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
     match scause.cause() {
         Trap::Exception(Exception::UserEnvCall) => {
             cx.sepc += 4;
-            cx.x[10] = crate::syscall::syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12]]) as usize;
+            cx.x[10] = syscall::syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12]]) as usize;
         }
         Trap::Exception(Exception::StoreFault) | Trap::Exception(Exception::StorePageFault) => {
             println!("[kernel] PageFault in application, bad addr = {:#x}, bad instruction = {:#x}, kernel killed it.", stval, cx.sepc);

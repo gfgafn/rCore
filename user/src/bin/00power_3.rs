@@ -21,7 +21,7 @@ fn main() -> i32 {
             user_lib::println!("power_3 [{}/{}]", i, iter);
         }
     }
-    user_lib:: println!("{}^{} = {}(MOD {})", p, iter, s[cur], m);
+    user_lib::println!("{}^{} = {}(MOD {})", p, iter, s[cur], m);
     user_lib::println!("Test power_3 OK!");
     0
 }

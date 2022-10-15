@@ -14,14 +14,16 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
-pub use context::TaskContext;
+pub use self::context::TaskContext;
+pub use self::task::{TaskControlBlock, TaskStatus};
 
 use lazy_static::*;
 
-use crate::config::{APP_SIZE_LIMIT, MAX_APP_NUM, USER_STACK_SIZE};
+use crate::config::{APP_SIZE_LIMIT, MAX_APP_NUM, MAX_SYSCALL_NUM, USER_STACK_SIZE};
 use crate::loader::{get_base_i, get_current_user_stack_bottom, get_num_app, init_app_cx};
+use crate::timer;
 
-use self::task::{TaskControlBlock, TaskStatus};
+use self::task::TaskLifecycle;
 
 /// The task manager, where all the tasks are managed.
 ///
@@ -54,9 +56,12 @@ lazy_static! {
         let mut tasks = [TaskControlBlock {
             task_cx: TaskContext::zero_init(),
             task_status: TaskStatus::UnInit,
+            lifecycle: TaskLifecycle {init_time_ms: 0, first_run_time_ms: 0, exit_time_ms: 0},
+            syscall_times:[0; MAX_SYSCALL_NUM]
         }; MAX_APP_NUM];
         for (i, task) in tasks.iter_mut().enumerate() {
             task.task_cx = TaskContext::goto_restore(init_app_cx(i));
+            task.lifecycle = TaskLifecycle {init_time_ms: timer::get_time_ms(), first_run_time_ms: 0, exit_time_ms: 0};
             task.task_status = TaskStatus::Ready;
         }
         TaskManager {
@@ -80,6 +85,7 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let task0 = &mut inner.tasks[0];
         task0.task_status = TaskStatus::Running;
+        task0.lifecycle.first_run_time_ms = timer::get_time_ms();
         let next_task_cx_ptr = &task0.task_cx as *const TaskContext;
         drop(inner);
         let mut _unused = TaskContext::zero_init();
@@ -102,6 +108,7 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
         inner.tasks[current].task_status = TaskStatus::Exited;
+        inner.tasks[current].lifecycle.exit_time_ms = timer::get_time_ms();
     }
 
     /// Find next task to run and return app id.
@@ -122,6 +129,9 @@ impl TaskManager {
             let mut inner = self.inner.exclusive_access();
             let current = inner.current_task;
             inner.tasks[next].task_status = TaskStatus::Running;
+            if 0 != inner.tasks[next].lifecycle.first_run_time_ms {
+                inner.tasks[next].lifecycle.first_run_time_ms = timer::get_time_ms();
+            }
             inner.current_task = next;
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
@@ -160,6 +170,17 @@ impl TaskManager {
 
         false
     }
+
+    fn update_current_syscall_times(&self, syscall_id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let cur_task = inner.current_task;
+        inner.tasks[cur_task].syscall_times[syscall_id] += 1;
+    }
+
+    fn currrent_control_block(&self) -> TaskControlBlock {
+        let inner = self.inner.exclusive_access();
+        inner.tasks[inner.current_task]
+    }
 }
 
 /// run first task
@@ -197,4 +218,13 @@ pub fn exit_current_and_run_next() {
 /// 对用户程序要输出的数据进行检查，使其仅能输出位于程序本身内存空间内的数据
 pub fn check_sys_write_buffer(buf_addr: usize, len: usize) -> bool {
     TASK_MANAGER.check_address_within_current(buf_addr, len)
+}
+
+/// 更新当前运行的任务的系统调用次数
+pub fn update_current_syscall_times(syscall_id: usize) {
+    TASK_MANAGER.update_current_syscall_times(syscall_id)
+}
+
+pub fn get_current_control_block() -> TaskControlBlock {
+    TASK_MANAGER.currrent_control_block()
 }
