@@ -3,6 +3,9 @@
 //! - `#![feature(panic_info_message)]`  
 //!   panic! 时，获取其中的信息并打印
 #![feature(panic_info_message)]
+#![feature(alloc_error_handler)]
+
+extern crate alloc;
 
 #[cfg(feature = "board_qemu")]
 #[path = "boards/qemu.rs"]
@@ -15,6 +18,7 @@ mod config;
 mod lang_items;
 mod loader;
 mod logging;
+mod mm;
 mod sbi;
 mod sync;
 mod syscall;
@@ -30,6 +34,7 @@ pub fn rust_main() -> ! {
     clear_bss();
     logging::init();
     println!("[kernel] Hello, world!");
+    mm::init();
     trap::init();
     loader::load_apps();
     trap::enable_timer_interrupt();
