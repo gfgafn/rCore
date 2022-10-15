@@ -12,15 +12,17 @@
 //! was. For example, timer interrupts trigger task preemption, and syscalls go
 //! to [`syscall()`].
 
+pub use self::context::TrapContext;
+
 mod context;
 
 use riscv::register::{
     mtvec::TrapMode,
-    scause::{self, Exception, Trap},
-    stval, stvec,
+    scause::{self, Exception, Interrupt, Trap},
+    sie, stval, stvec,
 };
 
-pub use self::context::TrapContext;
+use crate::{syscall, task, timer};
 
 core::arch::global_asm!(include_str!("trap.S"));
 
@@ -34,6 +36,13 @@ pub fn init() {
     }
 }
 
+/// timer interrupt enabled
+pub fn enable_timer_interrupt() {
+    unsafe {
+        sie::set_stimer();
+    }
+}
+
 #[no_mangle]
 /// handle an interrupt, exception, or system call from user space
 pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
@@ -42,15 +51,19 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
     match scause.cause() {
         Trap::Exception(Exception::UserEnvCall) => {
             cx.sepc += 4;
-            cx.x[10] = crate::syscall::syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12]]) as usize;
+            cx.x[10] = syscall::syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12]]) as usize;
         }
         Trap::Exception(Exception::StoreFault) | Trap::Exception(Exception::StorePageFault) => {
-            println!("[kernel] PageFault in application, kernel killed it.");
-            crate::batch::run_next_app();
+            println!("[kernel] PageFault in application, bad addr = {:#x}, bad instruction = {:#x}, kernel killed it.", stval, cx.sepc);
+            task::exit_current_and_run_next();
         }
         Trap::Exception(Exception::IllegalInstruction) => {
             println!("[kernel] IllegalInstruction in application, kernel killed it.");
-            crate::batch::run_next_app();
+            task::exit_current_and_run_next();
+        }
+        Trap::Interrupt(Interrupt::SupervisorTimer) => {
+            timer::set_next_trigger();
+            task::suspend_current_and_run_next();
         }
         _ => {
             panic!(

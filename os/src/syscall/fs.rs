@@ -4,13 +4,12 @@ const FD_STDOUT: usize = 1;
 
 /// write buf of length `len`  to a file with `fd`
 pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
-    if !crate::batch::checkmem(buf as usize, len) {
+    if !crate::task::check_sys_write_buffer(buf as usize, len) {
         return -1;
     }
 
     match fd {
         FD_STDOUT => {
-            // println!("FD_STDOUT");
             let slice = unsafe { core::slice::from_raw_parts(buf, len) };
             let str = core::str::from_utf8(slice).unwrap();
             print!("{}", str);

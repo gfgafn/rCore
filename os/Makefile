@@ -6,9 +6,14 @@ KERNEL_BIN := $(KERNEL_ELF).bin
 DISASM_TMP := target/$(TARGET)/$(MODE)/asm
 
 # BOARD
-BOARD ?= qemu
-SBI ?= rustsbi
-BOOTLOADER := ../bootloader/$(SBI)-$(BOARD).bin
+BOARD		?= qemu
+SBI			?= rustsbi
+BOOTLOADER	:= ../bootloader/$(SBI)-$(BOARD).bin
+
+# Building mode argument
+ifeq ($(MODE), release)
+	MODE_ARG := --release
+endif
 
 # KERNEL ENTRY
 ifeq ($(BOARD), qemu)
@@ -44,7 +49,7 @@ kernel:
 	@cd ../user && make build TEST=$(TEST)
 	@echo Platform: $(BOARD)
 	@cp src/linker-$(BOARD).ld src/linker.ld
-	@cargo build --release
+	@cargo build $(MODE_ARG) --features "board_$(BOARD)"
 	@rm src/linker.ld
 
 clean:
