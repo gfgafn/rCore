@@ -3,7 +3,7 @@ use bitflags::*;
 use ::alloc::vec;
 use ::alloc::vec::Vec;
 
-use super::{frame_alloc, FrameTracker, PhysPageNum, VirtPageNum};
+use super::{frame_alloc, FrameTracker, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
 
 bitflags! {
     /// page table entry flags
@@ -95,6 +95,25 @@ impl PageTable {
         assert!(pte.is_valid(), "vpn {:?} is invalid before unmapping", vpn);
         *pte = PageTableEntry::empty();
     }
+
+    /// 如果能够找到页表项，那么它会将页表项拷贝一份并返回，否则就返回一个 `None`
+    pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
+        self.find_pte(vpn).copied()
+    }
+
+    /// 按照 `satp CSR` 格式要求 构造一个无符号 64 位无符号整数，使得其分页模式为 SV39 ，
+    /// 且将当前多级页表的根节点所在的物理页号填充进去
+    pub fn token(&self) -> usize {
+        8usize << 60 | <PhysPageNum as Into<usize>>::into(self.root_ppn)
+    }
+
+    /// Temporarily used to get arguments from user space.
+    pub fn from_token(satp: usize) -> Self {
+        Self {
+            root_ppn: PhysPageNum::from(satp & ((1usize << 44) - 1)),
+            frames: Vec::new(),
+        }
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -147,4 +166,34 @@ impl PageTableEntry {
     pub fn executable(&self) -> bool {
         (self.flags() & PTEFlags::X) != PTEFlags::empty()
     }
+}
+
+/// translate a pointer to a mutable u8 Vec through page table
+///
+/// 将应用地址空间中一个缓冲区转化为在内核空间中能够直接访问的形式
+///
+/// 参数中的 `token` 是某个应用地址空间的 `token` ， `ptr` 和 `len` 则
+/// 分别表示该地址空间中的一段缓冲区的起始地址和长度(注：这个缓冲区的应用虚拟地址范围是连续的)
+///
+/// 返回一组可以在内核空间中直接访问的字节数组切片（注：这个缓冲区的内核虚拟地址范围有可能是不连续的）
+pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&'static mut [u8]> {
+    let page_table = PageTable::from_token(token);
+    let mut start = ptr as usize;
+    let end = start + len;
+    let mut v: Vec<&mut [u8]> = Vec::new();
+    while start < end {
+        let start_va = VirtAddr::from(start);
+        let mut vpn: VirtPageNum = start_va.floor();
+        let ppn: PhysPageNum = page_table.translate(vpn).unwrap().ppn();
+        vpn.step();
+        let mut end_va: VirtAddr = vpn.into();
+        end_va = end_va.min(VirtAddr::from(end));
+        if end_va.page_offset() == 0 {
+            v.push(&mut ppn.get_bytes_array()[start_va.page_offset()..]);
+        } else {
+            v.push(&mut ppn.get_bytes_array()[start_va.page_offset()..end_va.page_offset()]);
+        }
+        start = end_va.into();
+    }
+    v
 }
