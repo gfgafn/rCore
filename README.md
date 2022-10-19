@@ -22,7 +22,7 @@ Get more information about development environment from [setup-devel-env](http:/
 - [x] LibOS: Make the application isolated from the hardware, simplify the difficulty and complexity of the application to access the hardware.
 - [x] BatchOS： Isolate applications from the operating system to strengthen system security and improve execution efficiency.
 - [x] Multiprog & Time-sharing OS: Share CPU resource between multiply applications.
-- [ ] Address Space OS: Isolate the memory address space accessed by the application, limit the mutual interference between the application, and improve security.
+- [x] Address Space OS: Isolate the memory address space accessed by the application, limit the mutual interference between the application, and improve security.
 - [ ] Process OS: Allows application dynamically creates new process and enhance process management and resource management capabilities.
 - [ ] Filesystem OS：Allows applications to store data persistently.
 - [ ] IPC OS：Allows multiple apps to interact with data and event notifications between processes.
@@ -30,19 +30,19 @@ Get more information about development environment from [setup-devel-env](http:/
 - [ ] SyncMutex OS：Supports synchronous and exclusive access to shared resources in multithreaded applications.
 - [ ] Device OS：Improve the I/O efficiency and human-computer interaction ability of the application, and support serial ports/block devices/keyboards/mice/display devices based on peripheral interrupts.
 
-Run `git checkout chx` to view these Operating System.
-| Operating System            | Git branch |
-| --------------------------- | :--------: |
-| LibOS                       |    ch1     |
-| BatchOS                     |    ch2     |
-| Multiprog & Time-sharing OS |    ch3     |
-| Address Space OS            |            |
-| Process OS                  |            |
-| Filesystem OS               |            |
-| IPC OS                      |            |
-| Thread & Coroutine OS       |            |
-| SyncMutex OS                |            |
-| Device OS                   |            |
+Run `git checkout chx` to view these Operating System and the lab of every chapter.
+| Operating System            | Lab        | Git branch |
+| --------------------------- | ---------- | :--------: |
+| LibOS                       | Chapter1 ✅ |    ch1     |
+| BatchOS                     | Chapter2 ✅ |    ch2     |
+| Multiprog & Time-sharing OS | Chapter3 ✅ |    ch3     |
+| Address Space OS            | Chapter4   |    ch4     |
+| Process OS                  | Chapter5   |            |
+| Filesystem OS               | Chapter6   |            |
+| IPC OS                      | Chapter7   |            |
+| Thread & Coroutine OS       | Chapter8   |            |
+| SyncMutex OS                | Chapter8   |            |
+| Device OS                   | Chapter9   |            |
 
 ## Reference
 
