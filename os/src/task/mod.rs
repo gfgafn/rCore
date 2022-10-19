@@ -9,20 +9,22 @@
 //! Be careful when you see `__switch` ASM function in `switch.S`. Control flow around this function
 //! might not be what you expect.
 
+pub use self::context::TaskContext;
+
+use lazy_static::*;
+
+use ::alloc::vec::Vec;
+
+use crate::loader;
+use crate::sync::UPSafeCell;
+use crate::trap::TrapContext;
+
 mod context;
 mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
-pub use self::context::TaskContext;
 use self::task::{TaskControlBlock, TaskStatus};
-
-use lazy_static::*;
-
-use crate::loader::{get_app_data, get_num_app};
-use crate::sync::UPSafeCell;
-use crate::trap::TrapContext;
-use ::alloc::vec::Vec;
 
 // use self::task::TaskLifecycle;
 
@@ -54,22 +56,11 @@ lazy_static! {
     /// a `TaskManager` global instance through lazy_static!
     pub static ref TASK_MANAGER: TaskManager = {
         println!("init TASK_MANAGER");
-        let num_app = get_num_app();
-        // let mut tasks = [TaskControlBlock {
-        //     task_cx: TaskContext::zero_init(),
-        //     task_status: TaskStatus::UnInit,
-        //     lifecycle: TaskLifecycle {init_time_ms: 0, first_run_time_ms: 0, exit_time_ms: 0},
-        //     syscall_times:[0; MAX_SYSCALL_NUM]
-        // }; MAX_APP_NUM];
-        // for (i, task) in tasks.iter_mut().enumerate() {
-        //     task.task_cx = TaskContext::goto_restore(init_app_cx(i));
-        //     task.lifecycle = TaskLifecycle {init_time_ms: timer::get_time_ms(), first_run_time_ms: 0, exit_time_ms: 0};
-        //     task.task_status = TaskStatus::Ready;
-        // }
+        let num_app = loader::get_num_app();
         println!("num_app = {}", num_app);
         let mut tasks: Vec<TaskControlBlock> = Vec::new();
         for i in 0..num_app {
-            tasks.push(TaskControlBlock::new(get_app_data(i), i));
+            tasks.push(TaskControlBlock::new(loader::get_app_data(i), i));
         }
         TaskManager {
             num_app,
@@ -138,7 +129,7 @@ impl TaskManager {
     /// Get the current 'Running' task's trap contexts.
     fn get_current_trap_cx(&self) -> &'static mut TrapContext {
         let inner = self.inner.exclusive_access();
-        inner.tasks[inner.current_task].get_trap_cx()
+        inner.tasks[inner.current_task].trap_ctx()
     }
 
     /// Switch current `Running` task to the task we have found,
@@ -169,37 +160,6 @@ impl TaskManager {
             crate::board::QEMU_EXIT_HANDLE.exit_success();
         }
     }
-
-    // /// 检查一段内存范围是否在 `current_task` 的内存空间内
-    // fn check_address_within_current(&self, buf_addr: usize, len: usize) -> bool {
-    //     let inner = self.inner.exclusive_access();
-    //     let current_task = inner.current_task;
-    //     let current_user_stack_bottom = get_current_user_stack_bottom(current_task);
-    //     let current_user_stack_top = current_user_stack_bottom - USER_STACK_SIZE;
-    //     let current_task_base_address = get_base_i(current_task);
-
-    //     if current_user_stack_top <= buf_addr && buf_addr + len <= current_user_stack_bottom {
-    //         return true;
-    //     }
-    //     if current_task_base_address <= buf_addr
-    //         && buf_addr + len <= current_task_base_address + APP_SIZE_LIMIT
-    //     {
-    //         return true;
-    //     }
-
-    //     false
-    // }
-
-    // fn update_current_syscall_times(&self, syscall_id: usize) {
-    //     let mut inner = self.inner.exclusive_access();
-    //     let cur_task = inner.current_task;
-    //     inner.tasks[cur_task].syscall_times[syscall_id] += 1;
-    // }
-
-    // fn currrent_control_block(&self) -> TaskControlBlock {
-    //     let inner = self.inner.exclusive_access();
-    //     inner.tasks[inner.current_task]
-    // }
 }
 
 /// Run the first task in task list.

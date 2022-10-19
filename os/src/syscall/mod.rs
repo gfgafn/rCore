@@ -32,7 +32,6 @@ pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
         SYSCALL_EXIT => self::process::sys_exit(args[0] as i32),
         SYSCALL_YIELD => self::process::sys_yield(),
         SYSCALL_GET_TIME => self::process::sys_get_time(),
-        // SYSCALL_TASK_INFO => self::process::sys_task_info(args[0] as *mut TaskInfo),
         _ => panic!("Unsupported syscall_id: {}", syscall_id),
     }
 }

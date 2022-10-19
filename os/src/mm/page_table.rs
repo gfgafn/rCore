@@ -3,7 +3,8 @@ use bitflags::*;
 use ::alloc::vec;
 use ::alloc::vec::Vec;
 
-use super::{frame_alloc, FrameTracker, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
+use super::address::{PhysPageNum, VirtAddr, VirtPageNum};
+use super::frame_allocator::{frame_alloc, FrameTracker};
 
 bitflags! {
     /// page table entry flags
@@ -37,14 +38,13 @@ impl PageTable {
         }
     }
 
-    // TODO: 修改命名 find_pte_or_create
     /// 在多级页表找到一个虚拟页号对应的页表项的可变引用。如果在遍历的过程中发现有节点尚未创建则会新建一个节点
-    fn find_pte_create(&mut self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
+    fn find_pte_or_create(&mut self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
         let idxs: [usize; 3] = vpn.indexes();
         let mut ppn: PhysPageNum = self.root_ppn;
         let mut result: Option<&mut PageTableEntry> = None;
         for (i, &vpn) in idxs.iter().enumerate() {
-            let pte: &mut PageTableEntry = &mut ppn.get_pte_array()[vpn];
+            let pte: &mut PageTableEntry = &mut ppn.as_mut_slice()[vpn];
             if i == 2 {
                 result = Some(pte);
                 break;
@@ -67,7 +67,7 @@ impl PageTable {
         // 这里采用一种最简单的 恒等映射 (Identical Mapping) ，即对于物理内存上的每个物理页帧，
         // 我们都在多级页表中用一个与其物理页号相等的虚拟页号来映射。
         for (i, &vpn) in idxs.iter().enumerate() {
-            let pte: &mut PageTableEntry = &mut ppn.get_pte_array()[vpn];
+            let pte: &mut PageTableEntry = &mut ppn.as_mut_slice()[vpn];
             if i == 2 {
                 result = Some(pte);
                 break;
@@ -83,7 +83,7 @@ impl PageTable {
     /// 建立虚实地址映射关系
     #[allow(unused)]
     pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
-        let pte: &mut PageTableEntry = self.find_pte_create(vpn).unwrap();
+        let pte: &mut PageTableEntry = self.find_pte_or_create(vpn).unwrap();
         assert!(!pte.is_valid(), "vpn {:?} is mapped before mapping", vpn);
         *pte = PageTableEntry::new(ppn, flags | PTEFlags::V);
     }
@@ -185,13 +185,13 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
         let start_va = VirtAddr::from(start);
         let mut vpn: VirtPageNum = start_va.floor();
         let ppn: PhysPageNum = page_table.translate(vpn).unwrap().ppn();
-        vpn.step();
+        vpn += VirtPageNum::one();
         let mut end_va: VirtAddr = vpn.into();
         end_va = end_va.min(VirtAddr::from(end));
         if end_va.page_offset() == 0 {
-            v.push(&mut ppn.get_bytes_array()[start_va.page_offset()..]);
+            v.push(&mut ppn.as_bytes_mut()[start_va.page_offset()..]);
         } else {
-            v.push(&mut ppn.get_bytes_array()[start_va.page_offset()..end_va.page_offset()]);
+            v.push(&mut ppn.as_bytes_mut()[start_va.page_offset()..end_va.page_offset()]);
         }
         start = end_va.into();
     }

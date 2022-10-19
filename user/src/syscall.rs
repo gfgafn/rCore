@@ -1,12 +1,9 @@
 use core::arch::asm;
 
-use crate::TaskInfo;
-
 pub const SYSCALL_WRITE: usize = 64;
 pub const SYSCALL_EXIT: usize = 93;
 pub const SYSCALL_YIELD: usize = 124;
 const SYSCALL_GET_TIME: usize = 169;
-pub const SYSCALL_TASK_INFO: usize = 410;
 
 fn syscall(id: usize, args: [usize; 3]) -> isize {
     let mut ret: isize;
@@ -45,9 +42,4 @@ pub fn sys_yield() -> isize {
 
 pub fn sys_get_time() -> isize {
     syscall(SYSCALL_GET_TIME, [0, 0, 0])
-}
-
-/// 查询当前正在执行的任务信息。
-pub fn sys_task_info(info: &mut TaskInfo) -> isize {
-    syscall(SYSCALL_TASK_INFO, [info as *mut _ as usize, 0, 0])
 }

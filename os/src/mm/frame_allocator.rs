@@ -1,12 +1,11 @@
 use lazy_static::*;
 
-use core::fmt::{self, Debug, Formatter};
-
 use ::alloc::vec::Vec;
+use core::fmt::{self, Debug, Formatter};
 
 use crate::{config, sync};
 
-use super::{PhysAddr, PhysPageNum};
+use super::address::{PhysAddr, PhysPageNum};
 
 /// 物理页帧管理器 Trait
 trait FrameAllocator {
@@ -110,13 +109,7 @@ pub struct FrameTracker {
 
 impl FrameTracker {
     pub fn new(ppn: PhysPageNum) -> Self {
-        // FIXME: 删除
-        // let bytes_array = ppn.get_bytes_array();
-        // for i in bytes_array {
-        //     *i = 0;
-        // }
-        // page cleaning
-        ppn.get_bytes_array().fill(0);
+        ppn.as_bytes_mut().fill(0);
         Self { ppn }
     }
 }

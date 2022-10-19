@@ -1,18 +1,20 @@
 //! Implementation of [`MapArea`] and [`MemorySet`].
 
-use super::{frame_alloc, FrameTracker};
-use super::{PTEFlags, PageTable, PageTableEntry};
-use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
-use super::{StepByOne, VPNRange};
-use crate::config::{MEMORY_END, MMIO, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_STACK_SIZE};
-use crate::sync::UPSafeCell;
+use bitflags::*;
+use lazy_static::*;
+use riscv::register::satp;
+
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use bitflags::*;
-use core::arch::asm;
-use lazy_static::*;
-use riscv::register::satp;
+use core::arch;
+
+use crate::config;
+use crate::sync::UPSafeCell;
+
+use super::address::{PhysAddr, PhysPageNum, VPNInterval, VirtAddr, VirtPageNum};
+use super::frame_allocator::{frame_alloc, FrameTracker};
+use super::page_table::{PTEFlags, PageTable, PageTableEntry};
 
 extern "C" {
     fn stext();
@@ -77,7 +79,7 @@ impl MemorySet {
         unsafe {
             satp::write(satp);
             // 将快表清空，这样 MMU 就不会看到快表中已经过期的键值对了
-            asm!("sfence.vma");
+            arch::asm!("sfence.vma");
         }
     }
 
@@ -85,7 +87,7 @@ impl MemorySet {
     /// 跳板
     fn map_trampoline(&mut self) {
         self.page_table.map(
-            VirtAddr::from(TRAMPOLINE).into(),
+            VirtAddr::from(config::TRAMPOLINE).into(),
             PhysAddr::from(self::strampoline as usize).into(),
             PTEFlags::R | PTEFlags::X,
         );
@@ -148,18 +150,18 @@ impl MemorySet {
         memory_set.push(
             MapArea::new(
                 (ekernel as usize).into(),
-                MEMORY_END.into(),
+                config::MEMORY_END.into(),
                 MapType::Identical,
                 MapPermission::R | MapPermission::W,
             ),
             None,
         );
         println!("mapping memory-mapped registers");
-        for pair in MMIO {
+        for &pair in config::MMIO {
             memory_set.push(
                 MapArea::new(
-                    (*pair).0.into(),
-                    ((*pair).0 + (*pair).1).into(),
+                    pair.0.into(),
+                    (pair.0 + pair.1).into(),
                     MapType::Identical,
                     MapPermission::R | MapPermission::W,
                 ),
@@ -199,7 +201,7 @@ impl MemorySet {
                     map_perm |= MapPermission::X;
                 }
                 let map_area = MapArea::new(start_va, end_va, MapType::Framed, map_perm);
-                max_end_vpn = map_area.vpn_range.get_end();
+                max_end_vpn = map_area.vpn_interval.end();
                 memory_set.push(
                     map_area,
                     Some(&elf.input[ph.offset() as usize..(ph.offset() + ph.file_size()) as usize]),
@@ -210,8 +212,8 @@ impl MemorySet {
         let max_end_va: VirtAddr = max_end_vpn.into();
         let mut user_stack_bottom: usize = max_end_va.into();
         // guard page
-        user_stack_bottom += PAGE_SIZE;
-        let user_stack_top = user_stack_bottom + USER_STACK_SIZE;
+        user_stack_bottom += config::PAGE_SIZE;
+        let user_stack_top = user_stack_bottom + config::USER_STACK_SIZE;
         memory_set.push(
             MapArea::new(
                 user_stack_bottom.into(),
@@ -224,8 +226,8 @@ impl MemorySet {
         // map TrapContext
         memory_set.push(
             MapArea::new(
-                TRAP_CONTEXT.into(),
-                TRAMPOLINE.into(),
+                config::TRAP_CONTEXT.into(),
+                config::TRAMPOLINE.into(),
                 MapType::Framed,
                 MapPermission::R | MapPermission::W,
             ),
@@ -249,7 +251,7 @@ impl MemorySet {
 
 /// map type for memory set: identical or framed
 /// 逻辑段内的所有虚拟页面映射到物理页帧的方式
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum MapType {
     /// 恒等映射方式
     Identical,
@@ -269,7 +271,8 @@ bitflags! {
 
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {
-    vpn_range: VPNRange,
+    /// 一段虚拟页号的连续区间，表示该逻辑段在地址区间中的位置和长度
+    vpn_interval: VPNInterval,
     data_frames: BTreeMap<VirtPageNum, FrameTracker>,
     map_type: MapType,
     map_perm: MapPermission,
@@ -286,7 +289,7 @@ impl MapArea {
         let start_vpn: VirtPageNum = start_va.floor();
         let end_vpn: VirtPageNum = end_va.ceil();
         Self {
-            vpn_range: VPNRange::new(start_vpn, end_vpn),
+            vpn_interval: VPNInterval::new(start_vpn, end_vpn),
             data_frames: BTreeMap::new(),
             map_type,
             map_perm,
@@ -298,7 +301,7 @@ impl MapArea {
         let ppn: PhysPageNum;
         match self.map_type {
             MapType::Identical => {
-                ppn = PhysPageNum::from(<VirtPageNum as Into<usize>>::into(vpn));
+                ppn = PhysPageNum::from(usize::from(vpn));
             }
             MapType::Framed => {
                 let frame: FrameTracker = frame_alloc().unwrap();
@@ -321,7 +324,7 @@ impl MapArea {
 
     /// 将当前逻辑段到物理内存的映射加入传入的该逻辑段所属的地址空间的多级页表中
     pub fn map(&mut self, page_table: &mut PageTable) {
-        for vpn in self.vpn_range {
+        for vpn in self.vpn_interval {
             self.map_one(page_table, vpn);
         }
     }
@@ -329,7 +332,7 @@ impl MapArea {
     /// 将当前逻辑段到物理内存的映射从传入的该逻辑段所属的地址空间的多级页表中删除
     #[allow(unused)]
     pub fn unmap(&mut self, page_table: &mut PageTable) {
-        for vpn in self.vpn_range {
+        for vpn in self.vpn_interval {
             self.unmap_one(page_table, vpn);
         }
     }
@@ -340,21 +343,21 @@ impl MapArea {
     pub fn copy_data(&mut self, page_table: &mut PageTable, data: &[u8]) {
         assert_eq!(self.map_type, MapType::Framed);
         let mut start: usize = 0;
-        let mut current_vpn: VirtPageNum = self.vpn_range.get_start();
+        let mut current_vpn: VirtPageNum = self.vpn_interval.start();
         let len = data.len();
         loop {
-            let src: &[u8] = &data[start..len.min(start + PAGE_SIZE)];
+            let src: &[u8] = &data[start..len.min(start + config::PAGE_SIZE)];
             let dst: &mut [u8] = &mut page_table
                 .translate(current_vpn)
                 .unwrap()
                 .ppn()
-                .get_bytes_array()[..src.len()];
+                .as_bytes_mut()[..src.len()];
             dst.copy_from_slice(src);
-            start += PAGE_SIZE;
+            start += config::PAGE_SIZE;
             if start >= len {
                 break;
             }
-            current_vpn.step();
+            current_vpn += VirtPageNum::one();
         }
     }
 }

@@ -1,8 +1,9 @@
 use core::fmt::{self, Debug, Formatter};
+use core::ops::{Add, AddAssign};
 
 use crate::config;
 
-use super::PageTableEntry;
+use super::page_table::PageTableEntry;
 
 /// physical address
 const PA_WIDTH_SV39: usize = 56;
@@ -11,20 +12,19 @@ const PPN_WIDTH_SV39: usize = PA_WIDTH_SV39 - config::PAGE_SIZE_BITS;
 const VPN_WIDTH_SV39: usize = VA_WIDTH_SV39 - config::PAGE_SIZE_BITS;
 
 /// physical address
-#[derive(Copy, Clone, Ord, PartialOrd, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
 pub struct PhysAddr(usize);
 
 /// virtual address
-// TODO: Ord, PartialOrd 交换顺序
-#[derive(Copy, Clone, Ord, PartialOrd, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
 pub struct VirtAddr(usize);
 
 /// physical page number
-#[derive(Copy, Clone, Ord, PartialOrd, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
 pub struct PhysPageNum(usize);
 
 /// virtual page number
-#[derive(Copy, Clone, Ord, PartialOrd, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
 pub struct VirtPageNum(usize);
 
 impl PhysAddr {
@@ -67,34 +67,38 @@ impl VirtAddr {
 const NUM_PTE_PER_VIRT_PAGE: usize = 1 << 9;
 
 impl PhysPageNum {
-    // TODO: 修改方法名
     /// 返回一个页表项定长数组的可变引用，代表多级页表中的一个节点
-    pub fn get_pte_array(&self) -> &'static mut [PageTableEntry] {
+    pub fn as_mut_slice(&self) -> &'static mut [PageTableEntry] {
         let pa: PhysAddr = (*self).into();
         // `PageTableEntry` 只是对 `usize` 的包装，实际上两者具有相同的内存布局，在 64 位的机器上即为 8 Byte
         // NUM_PTE_PER_VIRT_PAGE * core::mem::size_of::<PageTableEntry>() = 4KB = config::PAGE_SIZE
         unsafe {
-            core::slice::from_raw_parts_mut(pa.0 as *mut PageTableEntry, NUM_PTE_PER_VIRT_PAGE)
+            core::slice::from_raw_parts_mut(
+                pa.0 as *mut PageTableEntry,
+                self::NUM_PTE_PER_VIRT_PAGE,
+            )
         }
-        // TODO  delete
-        // unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut PageTableEntry, 512) }
     }
 
     /// 返回一个字节数组的可变引用，可以以字节为粒度对物理页帧上的数据进行访问
-    pub fn get_bytes_array(&self) -> &'static mut [u8] {
+    pub fn as_bytes_mut(&self) -> &'static mut [u8] {
         let pa: PhysAddr = (*self).into();
-        // TODO: 4096 修改为 config::PAGE_SIZE
-        unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut u8, 4096) }
+        unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut u8, config::PAGE_SIZE) }
     }
 
     /// 获取一个恰好放在一个物理页帧开头的类型为 `T` 的数据的可变引用
-    pub fn get_mut<T>(&self) -> &'static mut T {
+    pub fn as_mut<T>(&self) -> &'static mut T {
         let pa: PhysAddr = (*self).into();
         unsafe { (pa.0 as *mut T).as_mut().unwrap() }
     }
 }
 
 impl VirtPageNum {
+    #[inline]
+    pub fn one() -> Self {
+        Self(1usize)
+    }
+
     /// 取出虚拟页号的三级页索引，并按照从高到低的顺序返回 `[VPN2, VPN1, VPN0]`
     ///
     /// 在 SV39 模式中采用三级页表，即将 27 位的虚拟页号分为三个等长的部分，
@@ -103,8 +107,7 @@ impl VirtPageNum {
         let mut vpn: usize = self.0;
         let mut idx = [0usize; 3];
         for i in (0..3).rev() {
-            // FIXME
-            idx[i] = vpn & (NUM_PTE_PER_VIRT_PAGE - 1);
+            idx[i] = vpn & (self::NUM_PTE_PER_VIRT_PAGE - 1);
             vpn >>= 9;
         }
         idx
@@ -179,6 +182,24 @@ impl From<VirtAddr> for VirtPageNum {
     }
 }
 
+impl Add for VirtPageNum {
+    type Output = VirtPageNum;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        assert!(
+            self.0 + rhs.0 <= usize::MAX,
+            "add overflow: left + right > VirtPageNum:MAX"
+        );
+        (self.0 + rhs.0).into()
+    }
+}
+
+impl AddAssign for VirtPageNum {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs
+    }
+}
+
 impl Debug for VirtPageNum {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_fmt(format_args!("VPN:{:#x}", self.0))
@@ -214,82 +235,95 @@ impl From<VirtPageNum> for usize {
 }
 
 pub trait StepByOne {
-    fn step(&mut self);
+    fn forward_one(start: Self) -> Self;
 }
+
 impl StepByOne for VirtPageNum {
-    fn step(&mut self) {
-        self.0 += 1;
+    fn forward_one(start: Self) -> Self {
+        start + Self(1usize)
     }
 }
 
+/// a simple interval structure for type T
+///
+/// 区间
 #[derive(Copy, Clone)]
-/// a simple range structure for type T
-pub struct SimpleRange<T>
+pub struct SimpleInterval<T>
 where
     T: StepByOne + Copy + PartialEq + PartialOrd + Debug,
 {
-    l: T,
-    r: T,
+    start: T,
+    end: T,
 }
-impl<T> SimpleRange<T>
+
+impl<T> SimpleInterval<T>
 where
     T: StepByOne + Copy + PartialEq + PartialOrd + Debug,
 {
     pub fn new(start: T, end: T) -> Self {
         assert!(start <= end, "start {:?} > end {:?}!", start, end);
-        Self { l: start, r: end }
+        Self { start, end }
     }
-    pub fn get_start(&self) -> T {
-        self.l
+
+    pub fn start(&self) -> T {
+        self.start
     }
-    pub fn get_end(&self) -> T {
-        self.r
+
+    pub fn end(&self) -> T {
+        self.end
     }
 }
-impl<T> IntoIterator for SimpleRange<T>
+
+impl<T> IntoIterator for SimpleInterval<T>
 where
     T: StepByOne + Copy + PartialEq + PartialOrd + Debug,
 {
     type Item = T;
-    type IntoIter = SimpleRangeIterator<T>;
+    type IntoIter = SimpleRange<T>;
+
     fn into_iter(self) -> Self::IntoIter {
-        SimpleRangeIterator::new(self.l, self.r)
+        SimpleRange::new(self.start, self.end)
     }
 }
 
-/// iterator for the simple range structure
-pub struct SimpleRangeIterator<T>
+/// iterator for the simple interval structure
+pub struct SimpleRange<T>
 where
     T: StepByOne + Copy + PartialEq + PartialOrd + Debug,
 {
-    current: T,
+    start: T,
     end: T,
 }
 
-impl<T> SimpleRangeIterator<T>
+impl<T> SimpleRange<T>
 where
     T: StepByOne + Copy + PartialEq + PartialOrd + Debug,
 {
-    pub fn new(l: T, r: T) -> Self {
-        Self { current: l, end: r }
+    pub fn new(start: T, end: T) -> Self {
+        Self { start, end }
     }
 }
 
-impl<T> Iterator for SimpleRangeIterator<T>
+impl<T> Iterator for SimpleRange<T>
 where
     T: StepByOne + Copy + PartialEq + PartialOrd + Debug,
 {
     type Item = T;
+
     fn next(&mut self) -> Option<Self::Item> {
-        if self.current == self.end {
+        if self.start == self.end {
             None
         } else {
-            let t = self.current;
-            self.current.step();
-            Some(t)
+            let cur = self.start;
+            Some(core::mem::replace(
+                &mut self.start,
+                <T as StepByOne>::forward_one(cur),
+            ))
         }
     }
 }
 
-/// a simple range structure for virtual page number
-pub type VPNRange = SimpleRange<VirtPageNum>;
+/// a simple interval structure for virtual page number
+///
+/// 一段虚拟页号的连续区间
+pub type VPNInterval = SimpleInterval<VirtPageNum>;
